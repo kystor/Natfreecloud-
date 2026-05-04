@@ -146,7 +146,7 @@ def process_single_account(username, password):
     print(f"➡️ 开始处理账号: {username}")
     print(f"==========================================")
     
-    with SB(uc=True, test=True, locale="en", headless=True, chromium_arg="--disable-blink-features=AutomationControlled") as sb:
+    with SB(uc=True, test=True, locale="en", headless=True, chromium_arg="--disable-blink-features=AutomationControlled,--window-size=1920,1080") as sb:
         print(f"🌐 正在访问目标网站: {CONFIG['target_url']}")
         sb.uc_open_with_reconnect(CONFIG['target_url'], reconnect_time=8)
         time.sleep(4)

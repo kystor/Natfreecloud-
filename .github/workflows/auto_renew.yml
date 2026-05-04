@@ -66,15 +66,14 @@ jobs:
 
       - name: 运行自动化脚本 (全局接管网络)
         env:
-          # 传入你的账号密码变量
           acount: ${{ secrets.ACOUNT }}
-          
-          # 强制 Python 程序和浏览器走刚才启动的本地 10808 端口出海
           HTTP_PROXY: socks5://127.0.0.1:10808
           HTTPS_PROXY: socks5://127.0.0.1:10808
-          
-        # 必须带上 -u 参数，确保无缓冲输出，实时显示程序里的中文 print 提示
+          # 【核心修复】：将本地通信和浏览器驱动的下载加入白名单，不走代理
+          NO_PROXY: localhost,127.0.0.1,::1,github.com,github.io,googlechromelabs.github.io,googleapis.com
         run: python -u auto_login.py
+          
+
 
       - name: 上传运行过程截图
         uses: actions/upload-artifact@v4

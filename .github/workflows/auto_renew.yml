@@ -2,12 +2,13 @@ name: 多账号自动登录续期任务
 
 on:
   schedule:
+    # 每天 UTC 时间 00:00 运行（对应北京时间早上 8:00）
     - cron: '0 0 * * *'
-  workflow_dispatch:
+  workflow_dispatch: # 允许你在 GitHub 网页上手动点击按钮运行测试
 
 jobs:
   run-script:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-latest # 使用最新的 Ubuntu Linux 系统作为后台服务器
 
     steps:
       - name: 获取代码仓库
@@ -24,22 +25,25 @@ jobs:
 
       - name: 🚀 智能解析节点并启动 Hysteria2
         env:
-          # 读取你在 Secrets 中填入的完整 hy2 链接
-          HY2_NODE: ${{ secrets.HY2_NODE }}
+          # 【修改点】：将读取的变量名正式更改为 proxy
+          # 它会读取你在 GitHub Secrets 中名为 PROXY 的变量
+          proxy: ${{ secrets.PROXY }}
         run: |
           echo ">>> 正在下载 Hysteria2 内核..."
           wget -q https://github.com/apernet/hysteria/releases/latest/download/hysteria-linux-amd64
           chmod +x hysteria-linux-amd64
           
           echo ">>> 正在解析节点链接..."
-          # 使用 sed 和 grep 提取完整链接中的密码、服务器地址和 SNI
-          AUTH=$(echo "$HY2_NODE" | sed -n 's|.*://\([^@]*\)@.*|\1|p')
-          SERVER=$(echo "$HY2_NODE" | sed -n 's|.*@\([^/?#]*\).*|\1|p')
-          SNI=$(echo "$HY2_NODE" | grep -oP 'sni=\K[^&#]*')
+          # 【修改点】：使用新的变量名 $proxy 进行字符串切割
+          # 提取完整链接中的密码、服务器地址和 SNI
+          AUTH=$(echo "$proxy" | sed -n 's|.*://\([^@]*\)@.*|\1|p')
+          SERVER=$(echo "$proxy" | sed -n 's|.*@\([^/?#]*\).*|\1|p')
+          SNI=$(echo "$proxy" | grep -oP 'sni=\K[^&#]*')
           
           echo ">>> 提取成功！Server: $SERVER | SNI: $SNI"
           
           echo ">>> 正在生成本地代理配置..."
+          # 将提取出来的信息，动态写入到 hy2-config.yaml 配置文件中
           cat <<EOF > hy2-config.yaml
           server: $SERVER
           auth: $AUTH
@@ -51,24 +55,31 @@ jobs:
           EOF
           
           echo ">>> 启动 Hysteria2 后台服务..."
+          # 在后台静默运行 Hysteria2 代理客户端，并将日志输出到 hy2.log
           nohup ./hysteria-linux-amd64 client -c hy2-config.yaml > hy2.log 2>&1 &
+          
+          # 等待 3 秒，确保代理服务完全启动
           sleep 3
           
-          # 打印一下启动日志，方便你在 GitHub 面板查看是否连接成功
+          # 打印一下启动日志，方便你在 GitHub Actions 面板查看是否连接成功
           cat hy2.log
 
       - name: 运行自动化脚本 (全局接管网络)
         env:
+          # 传入你的账号密码变量
           acount: ${{ secrets.ACOUNT }}
-          # 强制 Python 和浏览器走刚才启动的本地 10808 端口
+          
+          # 强制 Python 程序和浏览器走刚才启动的本地 10808 端口出海
           HTTP_PROXY: socks5://127.0.0.1:10808
           HTTPS_PROXY: socks5://127.0.0.1:10808
+          
+        # 必须带上 -u 参数，确保无缓冲输出，实时显示程序里的中文 print 提示
         run: python -u auto_login.py
 
       - name: 上传运行过程截图
         uses: actions/upload-artifact@v4
-        if: always() 
+        if: always() # 无论成功还是报错，都强制执行这一步，方便排错
         with:
           name: Auto-Login-Screenshots
           path: screenshots/
-          retention-days: 7
+          retention-days: 7 # 截图文件保存 7 天

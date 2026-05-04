@@ -5,19 +5,33 @@ from seleniumbase import SB
 import ddddocr
 
 # ==========================================
-# 1. 网站配置区域 (已更新为你提供的真实元素 ID)
+# 1. 网站配置区域
 # ==========================================
 CONFIG = {
     "target_url": "https://nat.freecloud.ltd/login",
-    "username_selector": "#emailInp",             # 【已更新】账号输入框 ID
-    "password_selector": "#emailPwdInp",          # 【已更新】密码输入框 ID
-    "captcha_img_selector": "#allow_login_email_captcha",          # 验证码图片
-    "captcha_input_selector": "#captcha_allow_login_email_captcha", # 验证码输入框
-    "login_btn_selector": 'button[type="submit"]'                  # 登录按钮
+    "username_selector": "#emailInp",             
+    "password_selector": "#emailPwdInp",          
+    "captcha_img_selector": "#allow_login_email_captcha",          
+    "captcha_input_selector": "#captcha_allow_login_email_captcha", 
+    "login_btn_selector": 'button[type="submit"]'                  
 }
 
+# 提前创建一个文件夹，用来专门存放截图
+os.makedirs("screenshots", exist_ok=True)
+
+# 截图辅助函数：自动给图片加上账号名和步骤编号
+def take_screenshot(sb, step_name, username="system"):
+    # 为了防止邮箱里的 @ 或 . 导致文件名异常，替换成下划线
+    safe_name = username.replace("@", "_").replace(".", "_")
+    filepath = f"screenshots/{safe_name}_{step_name}.png"
+    try:
+        sb.save_screenshot(filepath)
+        print(f"    📸 已截图保存: {filepath}")
+    except Exception as e:
+        print(f"    ⚠️ 截图失败 ({filepath}): {e}")
+
 # ==========================================
-# 2. Cloudflare 绕过辅助函数 (保持不变)
+# 2. Cloudflare 绕过辅助函数 
 # ==========================================
 def is_cloudflare_interstitial(sb) -> bool:
     try:
@@ -125,25 +139,25 @@ def handle_turnstile_verification(sb) -> bool:
     return True
 
 # ==========================================
-# 3. 单个账号的处理流程（封装成函数方便循环调用）
+# 3. 单个账号的处理流程（加入多步骤截图）
 # ==========================================
 def process_single_account(username, password):
     print(f"\n==========================================")
     print(f"➡️ 开始处理账号: {username}")
     print(f"==========================================")
     
-    # 每次处理新账号，都启动一个全新的、干净的浏览器环境
-    # 这样能避免上一个账号的 Cookie 缓存影响下一个账号
-    # 部署在 GitHub 时，务必将 headless 设置为 True
     with SB(uc=True, test=True, locale="en", headless=True, chromium_arg="--disable-blink-features=AutomationControlled") as sb:
         print(f"🌐 正在访问目标网站: {CONFIG['target_url']}")
         sb.uc_open_with_reconnect(CONFIG['target_url'], reconnect_time=8)
         time.sleep(4)
+        
+        # 【截图 1：刚进入网页】
+        take_screenshot(sb, "1_初始访问页面", username)
 
-        # ---------------- 第一关：过 Cloudflare 盾 ----------------
         if is_cloudflare_interstitial(sb):
             if not bypass_cloudflare_interstitial(sb):
                 print(f"❌ 无法绕过 CF 整页拦截，跳过此账号。")
+                take_screenshot(sb, "Error_卡在CF盾", username)
                 return 
             time.sleep(3) 
             
@@ -151,9 +165,11 @@ def process_single_account(username, password):
         handle_turnstile_verification(sb)
         
         print("🎉 CF 验证已处理完毕，即将进入图片验证码环节。")
-        time.sleep(3) # 等待页面刷新或完全加载
+        time.sleep(3)
+        
+        # 【截图 2：完成CF验证，进入登录表单】
+        take_screenshot(sb, "2_准备填写表单", username)
 
-        # ---------------- 第二关：识别 Base64 验证码并登录 ----------------
         try:
             print(">>> 正在提取 Base64 验证码数据...")
             sb.wait_for_element(CONFIG['captcha_img_selector'], timeout=10)
@@ -170,55 +186,48 @@ def process_single_account(username, password):
                 print(">>> ⚠️ 错误：验证码图片的 src 不是 base64 格式，跳过此账号！")
                 return
 
-            # 填写登录信息
             print(">>> 正在输入账号、密码和验证码...")
             sb.type(CONFIG['username_selector'], username)
             sb.type(CONFIG['password_selector'], password)
             sb.type(CONFIG['captcha_input_selector'], captcha_text)
 
-            # 点击登录
+            # 【截图 3：点击登录前的状态（核对是否填错）】
+            take_screenshot(sb, "3_已填写数据准备登录", username)
+
             print(">>> 点击登录！")
             sb.click(CONFIG['login_btn_selector'])
 
             time.sleep(5)
             print(f"📄 登录后的页面标题是: {sb.get_title()}")
-            print(f"✅ 账号 {username} 执行完毕！")
+            
+            # 【截图 4：点击登录后的最终结果页面】
+            take_screenshot(sb, "4_登录后的结果页面", username)
+            print(f"✅ 账号 {username} 登录执行完毕！")
 
         except Exception as e:
             print(f"❌ 账号 {username} 处理过程中出现错误: {e}")
+            take_screenshot(sb, "Error_程序崩溃截图", username)
 
 # ==========================================
-# 4. 主控程序：负责读取环境变量并循环分发任务
+# 4. 主程序入口
 # ==========================================
 def main():
     print("🚀 自动化任务启动...")
-    
-    # 1. 获取名为 acount 的环境变量
-    # 如果没拿到，给一个本地测试用的默认格式
-    accounts_str = os.environ.get("acount", "user1@abc.com:pass1,user2@abc.com:pass2")
+    accounts_str = os.environ.get("acount")
     
     if not accounts_str:
-        print("⚠️ 未获取到名为 'acount' 的环境变量，程序结束。")
+        print("⚠️ 未获取到名为 'acount' 的环境变量，请检查 GitHub Secrets 配置！")
         return
 
-    # 2. 按照逗号将多个账号切分开
-    # 例如："a:1,b:2" -> 变成列表 ['a:1', 'b:2']
     account_list = accounts_str.split(',')
-    
     print(f"📋 共检测到 {len(account_list)} 个账号需要处理。")
     
-    # 3. 使用 for 循环，排队处理每一个账号
     for item in account_list:
-        item = item.strip() # 去掉前后多余的空格
-        
-        # 确保格式正确，包含冒号
+        item = item.strip()
         if ':' in item:
-            # 按照第一个冒号进行切分，分为账号和密码两部分
             parts = item.split(':', 1) 
             username = parts[0].strip()
             password = parts[1].strip()
-            
-            # 调用上面的单账号处理流程
             process_single_account(username, password)
         else:
             print(f"⚠️ 账号格式不正确（缺少冒号），已跳过: {item}")

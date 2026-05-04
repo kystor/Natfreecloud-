@@ -1,4 +1,4 @@
-name: CF盾突破及网络接管自动化
+name: 多账号自动登录续期任务
 
 on:
   schedule:
@@ -12,22 +12,25 @@ jobs:
 
     steps:
       - name: 获取代码仓库
-        uses: actions/checkout@v4 # 升级到最新的 v4 版本，运行更快
+        uses: actions/checkout@v3
 
       - name: 配置 Python 环境
-        uses: actions/setup-python@v5 # 升级到最新的 v5 版本
+        uses: actions/setup-python@v4
         with:
           python-version: '3.10'
 
-      - name: 安装系统级依赖 (Xvfb 虚拟屏幕)
-        # 🌟 关键步骤：在 Linux 服务器上安装虚拟显示器环境，用于模拟真实屏幕
+      - name: 安装 Python 依赖包
+        run: |
+          pip install seleniumbase ddddocr
+
+       # 🌟 修改点：新增这个步骤，安装系统级的 Xvfb 虚拟显示支持
+      - name: 安装系统依赖 (Xvfb)
         run: sudo apt-get update && sudo apt-get install -y xvfb
 
       - name: 安装 Python 依赖包
         run: |
-          python -m pip install --upgrade pip
-          # 合并了你的两个步骤，保持 seleniumbase 为最新版以应对 CF 的更新
-          pip install --upgrade seleniumbase ddddocr
+          # 顺便把依赖 seleniumbase 更新到最新版，它对 CF 盾的绕过经常有更新
+          pip install --upgrade seleniumbase ddddocr   
 
       - name: 🚀 智能解析节点并启动 Hysteria2
         env:
@@ -47,6 +50,7 @@ jobs:
           echo ">>> 提取成功！Server: $SERVER | SNI: $SNI"
           
           echo ">>> 正在生成本地代理配置..."
+          # 将提取出来的信息，动态写入到 hy2-config.yaml 配置文件中
           cat <<EOF > hy2-config.yaml
           server: $SERVER
           auth: $AUTH
@@ -58,39 +62,38 @@ jobs:
           EOF
           
           echo ">>> 启动 Hysteria2 后台服务..."
-          # 🌟 修改点：移除了原本的 `> hy2.log 2>&1`，不再屏蔽子进程的日志输出，
-          # 让你能在 GitHub Actions 面板直接看到代理内核的实时运行状态
-          ./hysteria-linux-amd64 client -c hy2-config.yaml &
+          # 在后台静默运行 Hysteria2 代理客户端，并将日志输出到 hy2.log
+          nohup ./hysteria-linux-amd64 client -c hy2-config.yaml > hy2.log 2>&1 &
           
           # 等待 3 秒，确保代理服务完全启动
           sleep 3
+          
+          # 打印一下启动日志，方便你在 GitHub Actions 面板查看是否连接成功
+          cat hy2.log
 
       - name: 运行自动化脚本 (全局接管网络)
         env:
-          # 如果你的新脚本需要账号密码，可以在这里读取
-          acount: ${{ secrets.ACOUNT }} 
+          acount: ${{ secrets.ACOUNT }}
           HTTP_PROXY: socks5://127.0.0.1:10808
           HTTPS_PROXY: socks5://127.0.0.1:10808
           # 保证 GitHub 通信和本地通信不走代理
           NO_PROXY: localhost,127.0.0.1,::1,github.com,github.io,googlechromelabs.github.io,googleapis.com
         run: |
           echo ">>> 🔍 正在测试本地代理是否成功连通外网..."
+          
+          # 🌟 代理连通性测试：使用 curl 命令通过本地 SOCKS5 代理请求 Google，如果 10 秒内连不上就会报错提示
           curl -x socks5://127.0.0.1:10808 -I https://www.google.com --connect-timeout 10 || echo "⚠️ 警告：代理连接测试失败，节点可能已失效或被封锁！"
           
-          echo ">>> 🚀 开始执行 CF 突破与自动登录脚本..."
+          echo ">>> 🚀 开始执行自动登录 Python 脚本..."
           
-          # 🌟 核心修改：使用 xvfb-run 唤起虚拟显示器来执行 Python 脚本。
-          # 这样 SeleniumBase 才能有“屏幕”去滑动鼠标点击验证码。
-          # 同时保留了 `-u` 参数，保证 Python 的 print 能够实时无缓冲输出。
-          xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" python -u bypass_cf.py
+          # 🌟 加上 -u 参数执行 Python 脚本，确保终端可以实时无缓冲输出日志信息
+          python -u bypass_cf.py
+          
 
       - name: 上传运行过程截图
         uses: actions/upload-artifact@v4
         if: always() # 无论成功还是报错，都强制执行这一步，方便排错
         with:
-          name: Automation-Screenshots
-          # 🌟 修改点：因为我们的新脚本是将截图直接保存在当前根目录下（例如 success_page.png），
-          # 所以把路径修改为抓取所有以 .png 结尾的文件。
-          path: |
-            *.png
+          name: Auto-Login-Screenshots
+          path: screenshots/
           retention-days: 7 # 截图文件保存 7 天

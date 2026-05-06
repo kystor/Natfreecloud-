@@ -5,12 +5,17 @@ from seleniumbase import SB
 import ddddocr
 
 # ==========================================
-# 1. 网站配置区域
+# 1. 网站配置区域 (✨ 已进行智能选择器优化)
 # ==========================================
 CONFIG = {
     "target_url": "https://nat.freecloud.ltd/login",
-    "username_selector": "#emailInp",             
-    "password_selector": "#emailPwdInp",          
+    
+    # 【优化】账号/邮箱输入框：使用逗号拼接多个特征，只要网页里有符合其中任意一个特征的输入框，就能被自动抓住
+    "username_selector": 'input[name="email"], input[name="username"], input[type="email"], #emailInp, #inputEmail',
+    
+    # 【优化】密码输入框：覆盖了最常见的密码框特征 (type="password") 以及你提供的 id 特征
+    "password_selector": 'input[type="password"], input[name="password"], #emailPwdInp, #inputPassword',
+    
     "captcha_img_selector": "#allow_login_email_captcha",          
     "captcha_input_selector": "#captcha_allow_login_email_captcha", 
     "login_btn_selector": 'button[type="submit"]'                  
@@ -219,7 +224,7 @@ def process_single_account(username, password):
                 return
 
             print(">>> 正在输入账号、密码和验证码...")
-            # 自动在对应的输入框里填入信息
+            # 自动在对应的输入框里填入信息。这里利用了我们优化过的 CSS 多重选择器
             sb.type(CONFIG['username_selector'], username)
             sb.type(CONFIG['password_selector'], password)
             sb.type(CONFIG['captcha_input_selector'], captcha_text)
@@ -248,10 +253,11 @@ def process_single_account(username, password):
 # ==========================================
 def main():
     print("🚀 自动化任务启动...")
+    # 从环境变量中读取名为 'acount' 的数据 (请确保环境变量拼写正确，通常是 account，但这里遵从你的原代码)
     accounts_str = os.environ.get("acount")
     
     if not accounts_str:
-        print("⚠️ 未获取到名为 'acount' 的环境变量，请检查 GitHub Secrets 配置！")
+        print("⚠️ 未获取到名为 'acount' 的环境变量，请检查 GitHub Secrets 或本地环境变量配置！")
         return
 
     account_list = accounts_str.split(',')
